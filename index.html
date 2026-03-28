@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>💰 Treasure Hunt Ultimate Enhanced</title>
+<style>
+body { margin:0; background:black; color:#0ff; font-family:monospace; text-align:center; overflow:hidden; }
+canvas { border:3px solid #0ff; margin-top:10px; image-rendering:pixelated; }
+#ui { position:absolute; top:10px; left:10px; color:#0ff; pointer-events:none; }
+#scoreBoard { font-size:18px; }
+#combo { font-size:22px; color:#ff0; text-shadow:0 0 10px #ff0; }
+#level { font-size:16px; color:#0f0; }
+#minimap { position:absolute; top:10px; right:280px; border:2px solid #0ff; image-rendering:pixelated; }
+#chatBox { position:fixed; right:0; top:0; width:260px; height:100%; background:#111; padding:5px; }
+#messages { height:40%; overflow-y:auto; text-align:left; font-size:12px; }
+input, button { padding:5px; margin:3px; background:#222; color:#0ff; border:1px solid #0ff; }
+#splash { position:fixed; top:0; left:0; width:100%; height:100%; background:#000; color:#0ff;
+  display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:10;
+}
+.particle { position:absolute; font-size:18px; pointer-events:none; animation:particleAnim 1s forwards; }
+.trail { position:absolute; width:8px; height:8px; background:#0ff; pointer-events:none; border-radius:50%; opacity:0.5;}
+@keyframes particleAnim { to { opacity:0; transform:translateY(-50px); } }
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <h1>💎 Treasure Hunt Ultimate</h1>
+  <h2>Made by JJ</h2>
+  <p style="max-width:500px;">Explore • Collect • Survive the Bus • Chat with friends</p>
+  <p>Loading enhanced version...</p>
+</div>
+
+<div id="ui">
+  <div id="scoreBoard">Score: 0</div>
+  <div id="combo"></div>
+  <div id="level">Level: 1</div>
+  <div>Health: <span id="health">❤️❤️❤️</span></div>
+</div>
+
+<canvas id="game" width="512" height="512"></canvas>
+<canvas id="minimap" width="128" height="128"></canvas>
+
+<div id="chatBox">
+  <h3>💬 Friends</h3>
+  <div id="friends"></div>
+  <h4 id="chatWith">Chat with Alex</h4>
+  <div id="messages"></div>
+  <input id="msg" placeholder="Type message...">
+  <button onclick="sendMsg()">Send</button>
+  <button onclick="toggleFilter()">🚫 No-Swear</button>
+  <button onclick="toggleNightMode()">🌙 Night Mode</button>
+</div>
+
+<script>
+// ==================== CORE SETUP ====================
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const minimap = document.getElementById("minimap");
+const mctx = minimap.getContext("2d");
+
+const TILE = 32, SIZE = 16;
+let player = {x: 8, y: 8, health: 3};
+let score = 0, combo = 0, multiplier = 1;
+let nightMode = false;
+let level = 1;
+
+let treasures = [];
+let powerups = [];
+let particles = [];
+let trails = [];
+let obstacles = [];
+let portals = [];
+
+// Bus
+let busActive = false;
+let bus = {x: 256, y: 256, speed: 2.5};
+
+// Friends system
+let username = localStorage.getItem("name") || "Player";
+let friends = ["Alex","Sam","Jordan"];
+let personalities = { Alex:"toxic", Sam:"funny", Jordan:"sad" };
+let moods = {};
+let currentFriend = "Alex";
+let noSwear = false;
+
+// High score
+let highScore = parseInt(localStorage.getItem("highScore")||0);
+
+// ==================== SPLASH ====================
+const splash = document.getElementById("splash");
+setTimeout(() => {
+  splash.innerHTML = `<h2>Welcome, ${username}!</h2><p>Game Enhanced v3.0</p>`;
+  setTimeout(() => {
+    splash.style.display = "none";
+    document.getElementById("chatBox").style.display = "block";
+    loadFriends();
+  }, 1200);
+}, 1800);
+
+// ==================== FRIENDS & CHAT ====================
+function loadFriends(){
+  let div = document.getElementById("friends");
+  div.innerHTML = "";
+  friends.forEach(f => {
+    let btn = document.createElement("button");
+    btn.innerText = f;
+    btn.onclick = () => switchFriend(f);
+    div.appendChild(btn);
+  });
+}
+
+function switchFriend(name){
+  saveChat(currentFriend);
+  currentFriend = name;
+  document.getElementById("chatWith").innerText = "Chat with " + name;
+  loadChat(name);
+}
+
+function loadChat(friend){
+  let saved = localStorage.getItem("chat_"+friend) || "";
+  document.getElementById("messages").innerHTML = saved;
+}
+
+function saveChat(friend){
+  localStorage.setItem("chat_"+friend, document.getElementById("messages").innerHTML);
+}
+
+function toggleFilter(){ 
+  noSwear = !noSwear; 
+  alert("No-swear filter: " + (noSwear ? "ON" : "OFF")); 
+}
+
+function toggleNightMode(){
+  nightMode = !nightMode;
+  document.body.style.background = nightMode ? "#001122" : "black";
+}
+
+// Chat functions
+function sendMsg(){
+  let input = document.getElementById("msg");
+  let msg = input.value.trim();
+  if(!msg) return;
+  addMessage(username, msg);
+  setTimeout(() => {
+    let reply = generateReply(msg);
+    addMessage(currentFriend, reply);
+    saveChat(currentFriend);
+  }, 600);
+  input.value = "";
+}
+
+function addMessage(user, text){
+  let div = document.createElement("div");
+  div.innerText = `${user}: ${text}`;
+  document.getElementById("messages").appendChild(div);
+  document.getElementById("messages").scrollTop = 9999;
+}
+
+function generateReply(msg){
+  let p = personalities[currentFriend];
+  let mood = getMood(currentFriend);
+  let replies = [];
+  
+  if(p==="toxic") replies = ["bro you're trash", "mid af", "get good 💀"];
+  else if(p==="funny") replies = ["nahhh 😭", "that's crazy", "im deceased"];
+  else if(p==="sad") replies = ["oh...", "i could never", "nice i guess"];
+
+  let reply = replies[Math.floor(Math.random()*replies.length)];
+  if(mood==="hyper") reply = reply.toUpperCase() + "!!!";
+  if(mood==="annoyed") reply += " ...whatever";
+  
+  if(noSwear) reply = reply.replace(/trash|mid|af/gi, "not great");
+  return reply;
+}
+
+function getMood(friend){
+  if(!moods[friend] || Math.random()<0.4){
+    const list = ["happy","annoyed","tired","hyper"];
+    moods[friend] = list[Math.floor(Math.random()*list.length)];
+  }
+  return moods[friend];
+}
+
+// ==================== GAME LOGIC ====================
+function spawnTreasure(){
+  let type = Math.random();
+  treasures.push({
+    x: Math.floor(Math.random()*SIZE),
+    y: Math.floor(Math.random()*SIZE),
+    type: type < 0.6 ? "normal" : type < 0.85 ? "gold" : "bomb"
+  });
+}
+
+function spawnPowerup(){
+  if(Math.random() < 0.3){
+    powerups.push({
+      x: Math.floor(Math.random()*SIZE),
+      y: Math.floor(Math.random()*SIZE),
+      type: ["speed","shield","magnet"][Math.floor(Math.random()*3)]
+    });
+  }
+}
+
+// Obstacles
+function spawnObstacles(count=10){
+  obstacles = [];
+  for(let i=0;i<count;i++){
+    obstacles.push({x:Math.floor(Math.random()*SIZE),y:Math.floor(Math.random()*SIZE)});
+  }
+}
+
+// Portals
+function spawnPortals(count=2){
+  portals = [];
+  for(let i=0;i<count;i++){
+    portals.push({x:Math.floor(Math.random()*SIZE),y:Math.floor(Math.random()*SIZE)});
+  }
+}
+
+function createParticles(x, y, color){
+  for(let i=0; i<12; i++){
+    particles.push({
+      x: x*TILE + 10,
+      y: y*TILE + 10,
+      vx: (Math.random()-0.5)*6,
+      vy: (Math.random()-0.5)*6 - 2,
+      life: 30,
+      color: color
+    });
+  }
+}
+
+function createTrail(x, y){
+  trails.push({x:x*TILE+12, y:y*TILE+12, life:15});
+}
+
+function update(){
+  // Player trail
+  createTrail(player.x, player.y);
+  trails.forEach(t=>t.life--);
+  trails = trails.filter(t=>t.life>0);
+
+  // Bus logic
+  if(busActive){
+    let targetX = player.x * TILE + 10;
+    let targetY = player.y * TILE + 10;
+    bus.x += (targetX - bus.x) * 0.08 * level;
+    bus.y += (targetY - bus.y) * 0.08 * level;
+
+    let dx = player.x*TILE + 10 - bus.x;
+    let dy = player.y*TILE + 10 - bus.y;
+    if(Math.sqrt(dx*dx + dy*dy) < 25){
+      player.health--;
+      document.getElementById("health").innerHTML = "❤️".repeat(player.health);
+      addMessage(currentFriend, "💥 BUS HIT! Watch out!");
+      busActive = false;
+      if(player.health <= 0){
+        addMessage(currentFriend, "💀 GAME OVER - You were destroyed by the bus!");
+        score = 0;
+        combo = 0;
+        level = 1;
+        player.health = 3;
+        player.x = 8; player.y = 8;
+        spawnObstacles();
+        spawnPortals();
+      }
+    }
+  }
+
+  // Treasure collection
+  for(let i = treasures.length-1; i >= 0; i--){
+    let t = treasures[i];
+    if(player.x === t.x && player.y === t.y){
+      let points = t.type === "gold" ? 5 : t.type === "bomb" ? -3 : 1;
+      
+      if(t.type === "bomb"){
+        player.health = Math.max(1, player.health-1);
+        document.getElementById("health").innerHTML = "❤️".repeat(player.health);
+        createParticles(t.x, t.y, "#f00");
+      } else {
+        combo++;
+        multiplier = Math.min(4, 1 + Math.floor(combo/3));
+        score += points * multiplier;
+        createParticles(t.x, t.y, t.type==="gold" ? "#ff0" : "#0f0");
+        
+        if(combo % 5 === 0 && !busActive){
+          busActive = true;
+          bus.x = Math.random()*512;
+          bus.y = Math.random()*512;
+          addMessage(currentFriend, "😈 BUS INCOMING! Keep moving!");
+        }
+
+        // Level up every 15 points
+        if(score >= level*15){
+          level++;
+          addMessage(currentFriend, `🌟 LEVEL UP! Level ${level}`);
+          spawnObstacles(level+9);
+          spawnPortals(Math.min(level,4));
+        }
+      }
+      
+      document.getElementById("scoreBoard").innerText = `Score: ${score} ×${multiplier}`;
+      document.getElementById("combo").innerText = combo > 2 ? `COMBO ${combo}!` : "";
+      document.getElementById("level").innerText = `Level: ${level}`;
+
+      // Update high score
+      if(score>highScore){
+        highScore=score;
+        localStorage.setItem("highScore",highScore);
+      }
+
+      treasures.splice(i,1);
+      spawnTreasure();
+      spawnPowerup();
+    }
+  }
+
+  // Powerup collection
+  for(let i = powerups.length-1; i >= 0; i--){
+    let p = powerups[i];
+    if(player.x === p.x && player.y === p.y){
+      addMessage(currentFriend, p.type === "speed" ? "⚡ SPEED BOOST!" : p.type==="shield" ? "🛡️ Shield activated!" : "🧲 Magnet on!");
+      powerups.splice(i,1);
+      createParticles(p.x, p.y, "#0ff");
+    }
+  }
+
+  // Portals
+  portals.forEach(p=>{
+    if(player.x===p.x && player.y===p.y){
+      player.x=Math.floor(Math.random()*SIZE);
+      player.y=Math.floor(Math.random()*SIZE);
+      addMessage(currentFriend,"🌀 TELEPORTED!");
+    }
+  });
+
+  // Particle update
+  for(let i = particles.length-1; i >= 0; i--){
+    let p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.2;
+    p.life--;
+    if(p.life <= 0) particles.splice(i,1);
+  }
+}
+
+// ==================== DRAW ====================
+function draw(){
+  ctx.fillStyle = nightMode ? "#001122" : "black";
+  ctx.fillRect(0,0,512,512);
+
+  // Grid
+  ctx.strokeStyle = "#033";
+  for(let i=0; i<=SIZE; i++){
+    ctx.beginPath();
+    ctx.moveTo(i*TILE, 0);
+    ctx.lineTo(i*TILE, 512);
+    ctx.moveTo(0, i*TILE);
+    ctx.lineTo(512, i*TILE);
+    ctx.stroke();
+  }
+
+  // Obstacles
+  obstacles.forEach(o=>{
+    ctx.fillStyle="#888";
+    ctx.fillRect(o.x*TILE+4,o.y*TILE+4,24,24);
+  });
+
+  // Portals
+  portals.forEach(p=>{
+    ctx.fillStyle="#f0f";
+    ctx.fillRect(p.x*TILE+8,p.y*TILE+8,16,16);
+  });
+
+  // Treasures
+  treasures.forEach(t => {
+    if(t.type === "gold") ctx.fillStyle = "#ff0";
+    else if(t.type === "bomb") ctx.fillStyle = "#f00";
+    else ctx.fillStyle = "#0f0";
+    ctx.fillRect(t.x*TILE+6, t.y*TILE+6, 20, 20);
+  });
+
+  // Powerups
+  powerups.forEach(p => {
+    ctx.fillStyle = p.type==="speed" ? "#f0f" : p.type==="shield" ? "#0ff" : "#fa0";
+    ctx.fillRect(p.x*TILE+8, p.y*TILE+8, 16, 16);
+  });
+
+  // Player trails
+  trails.forEach(t=>{
+    ctx.fillStyle="#0ff";
+    ctx.globalAlpha=t.life/15*0.5;
+    ctx.fillRect(t.x,t.y,8,8);
+  });
+  ctx.globalAlpha=1;
+
+  // Player
+  ctx.fillStyle = "#0ff";
+  ctx.fillRect(player.x*TILE+4, player.y*TILE+4, 24, 24);
+
+  // Bus
+  if(busActive){
+    ctx.fillStyle = "#f00";
+    ctx.fillRect(bus.x-16, bus.y-24, 32, 48);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(bus.x-10, bus.y-18, 8, 8); // headlight
+  }
+
+  // Particles
+  particles.forEach(p => {
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.life/30;
+    ctx.fillRect(p.x, p.y, 6, 6);
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawMinimap(){
+  mctx.fillStyle = "#000";
+  mctx.fillRect(0,0,128,128);
+  mctx.fillStyle = "#0f0";
+  mctx.fillRect(player.x*8, player.y*8, 8, 8);
+
+  treasures.forEach(t => {
+    mctx.fillStyle = t.type==="gold" ? "#ff0" : t.type==="bomb" ? "#f00" : "#0f0";
+    mctx.fillRect(t.x*8+2, t.y*8+2, 4, 4);
+  });
+
+  obstacles.forEach(o=>{
+    mctx.fillStyle="#888";
+    mctx.fillRect(o.x*8+1,o.y*8+1,6,6);
+  });
+
+  portals.forEach(p=>{
+    mctx.fillStyle="#f0f";
+    mctx.fillRect(p.x*8+2,p.y*8+2,4,4);
+  });
+}
+
+// ==================== INPUT ====================
+document.addEventListener("keydown", e => {
+  let newX=player.x,newY=player.y;
+  if(e.key === "w" || e.key === "ArrowUp") newY--;
+  if(e.key === "s" || e.key === "ArrowDown") newY++;
+  if(e.key === "a" || e.key === "ArrowLeft") newX--;
+  if(e.key === "d" || e.key === "ArrowRight") newX++;
+
+  // Check obstacles
+  if(!obstacles.some(o=>o.x===newX && o.y===newY)){
+    player.x=Math.max(0,Math.min(SIZE-1,newX));
+    player.y=Math.max(0,Math.min(SIZE-1,newY));
+  }
+
+  if(e.key.toLowerCase() === "h"){
+    let dx = treasures[0] ? treasures[0].x - player.x : 0;
+    let dy = treasures[0] ? treasures[0].y - player.y : 0;
+    let dir = (dx>0?"Right":"Left") + " " + (dy>0?"Down":"Up");
+    addMessage(currentFriend, `Hint: Treasure ${dir}`);
+  }
+});
+
+// ==================== GAME LOOP ====================
+for(let i=0; i<5; i++) spawnTreasure();
+for(let i=0; i<2; i++) spawnPowerup();
+spawnObstacles();
+spawnPortals();
+
+function loop(){
+  update();
+  draw();
+  drawMinimap();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
